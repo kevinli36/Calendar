@@ -109,7 +109,7 @@ namespace Calendar.Models
             }
         }
         public string uriPath { get; set; } = "ms-appx:///Assets/init.png";
-        public TodoItem(string title, string description, DateTimeOffset date,string uri,string id_=null,bool finished = false)
+        public TodoItem(string title, string description, DateTimeOffset date,string uri,string id_,bool finished = false)
         {
             
 
@@ -127,7 +127,7 @@ namespace Calendar.Models
             ImageSource_ = new BitmapImage(new Uri(uriPath));
 
             //
-            if (id_ == null||id.Length < 10) {
+            if (id_ == null) {
                 id = Guid.NewGuid().ToString("N");
             }
 

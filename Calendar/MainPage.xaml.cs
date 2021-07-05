@@ -154,8 +154,10 @@ namespace Calendar
             title.Text = "";
             detail.Text = "";
             date.Date = DateTime.Now;
+            time.Time = new TimeSpan(DateTimeOffset.Now.Hour,DateTimeOffset.Now.Minute,DateTimeOffset.Now.Second);
             Update_flag = false;
             complete.Content = "future";
+            add.Content = "Create";
             await getConnectToGetWeatherAsync("广州");
         }
 
@@ -191,11 +193,12 @@ namespace Calendar
             }
             View.SingleView.Remove(SingleView.SelectedItem);
             Update_flag = false;
-            title.Text = "";
-            detail.Text = "";
-            date.Date = DateTime.Now;
-            add.Content = "Create";
+            initializePage();
+
+
             database.Remove(App.loginUser.username, View.SingleView.SelectedItem.getId());
+
+
         }
 
         private async void OnUserItemAdding()
@@ -203,6 +206,8 @@ namespace Calendar
             string ttl = title.Text;
             string des = detail.Text;
             DateTimeOffset date_ = date.Date;
+            date_ = new DateTimeOffset(date_.Year, date_.Month, date_.Day, time.Time.Hours, time.Time.Minutes,time.Time.Seconds,new TimeSpan(8,0,0));
+
             bool finished = false;
             if ((string)complete.Content == "future")
                 finished = false;
@@ -218,27 +223,39 @@ namespace Calendar
                 error_title = "未填写Title\n";
                 flag = 1;
             }
-            if (detail.Text == "")
+            else if (detail.Text == "")
             {
                 error_detail = "未填写Detail\n";
                 flag = 1;
             }
-            if (!finished)
+            else if (!finished)
             {
                 if (date.Date.Year < DateTime.Now.Year)
                 {
                     error_date = "日期过期\n";
                     flag = 1;
                 }
+                else if (date.Date.Year > DateTime.Now.Year)
+                {
+                    flag = 0;
+                }
                 else if (date.Date.Month < DateTime.Now.Month)
                 {
                     error_date = "日期过期\n";
                     flag = 1;
                 }
+                else if(date.Date.Month > DateTime.Now.Month)
+                {
+                    flag = 0;
+                }
                 else if (date.Date.Day < DateTime.Now.Day)
                 {
                     error_date = "日期过期\n";
                     flag = 1;
+                }
+                else if(date.Date.Day >= DateTime.Now.Day)
+                {
+                    flag = 0;
                 }
             }
             if (flag == 0)
@@ -258,10 +275,13 @@ namespace Calendar
             }
             }
         private async void OnUserItemUpdate()
+
         {
             string ttl = title.Text;
             string des = detail.Text;
             DateTimeOffset date_ = date.Date;
+            date_ = new DateTimeOffset(date_.Year, date_.Month, date_.Day, time.Time.Hours, time.Time.Minutes, time.Time.Seconds, new TimeSpan(8,0,0));
+
             string imgPath = View.SingleView.SelectedItem.uriPath;//modified
             bool finished = false;
             string error_text = "";
@@ -291,21 +311,36 @@ namespace Calendar
                     error_date = "日期过期\n";
                     flag = 1;
                 }
+                else if(date.Date.Year > DateTimeOffset.Now.Year)
+                {
+                    flag = 0;
+                }
                 else if (date.Date.Month < DateTime.Now.Month)
                 {
                     error_date = "日期过期\n";
                     flag = 1;
+                }
+                else if(date.Date.Month > DateTimeOffset.Now.Month)
+                {
+                    flag = 0;
                 }
                 else if (date.Date.Day < DateTime.Now.Day)
                 {
                     error_date = "日期过期\n";
                     flag = 1;
                 }
+                else if (date.Date.Day > DateTimeOffset.Now.Day)
+                {
+                    flag = 0;
+
+                }
+                
             }
             if (flag == 0)
             {
                 View.SingleView.Update(ttl, des, date_, imgPath, finished);
                 initializePage();
+                add.Content = "Create";
                 database.Update(App.loginUser.username, View.SingleView.SelectedItem.getId(),
                                 ttl, des, date_, imgPath);
             }
@@ -317,6 +352,9 @@ namespace Calendar
                 err.DefaultCommandIndex = 0;
                 await err.ShowAsync();
             }
+            
+
+
         }
         private void Share_Event(object sender, RoutedEventArgs e)
         {
@@ -329,6 +367,7 @@ namespace Calendar
             var one = e.ClickedItem as TodoItem;
             title.Text = one.Title;
             date.Date = one.Date;
+            time.Time = new TimeSpan(date.Date.Hour, date.Date.Minute, date.Date.Second);
             detail.Text = one.Description;
             Update_flag = true;
             add.Content = "Update";
@@ -344,6 +383,7 @@ namespace Calendar
         private void Search_Event(object sender, RoutedEventArgs e)
         {
             //search
+
             if (App.isLogin == false)
             {
                 new MessageDialog("not login!").ShowAsync();
@@ -351,7 +391,12 @@ namespace Calendar
             }
             string name = App.loginUser.username;
             string str = searchBox.Text;
-            database.Search(name, str);
+            string info = database.Search(name, str);
+
+            info += "view.count" + View.SingleView.Finished.itemList.Count;
+            new MessageDialog(info).ShowAsync();
+
+
         }
 
         private void SignIn_Click(object sender, RoutedEventArgs e)
@@ -361,14 +406,21 @@ namespace Calendar
 
         private void LogOut_Click(object sender, RoutedEventArgs e)
         {
-            (Window.Current.Content as Frame).Navigate(typeof(SignupPage));
             App.isLogin = false;
             App.loginUser = null;
+            database.Logout();
+            (Window.Current.Content as Frame).Navigate(typeof(SigninPage));
+           
+
         }
 
         protected override void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
+            View.getInstance().load();
+
+            name.Text = App.loginUser.username;
+
             DataTransferManager.GetForCurrentView().DataRequested += OnShareDataRequested;
         }
         protected override void OnNavigatedFrom(NavigationEventArgs e)

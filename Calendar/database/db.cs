@@ -3,6 +3,7 @@ using SQLitePCL;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -52,7 +53,7 @@ namespace Calendar.database
             string sql = @"CREATE TABLE IF NOT EXISTS user (
                     name   VARCHAR( 20  ) PRIMARY KEY NOT NULL,
                     pwd    VARCHAR(20),
-                    root    INTEGER
+                    state    INTEGER
                     );";
             using (var statement = conn.Prepare(sql))
             { statement.Step(); }
@@ -81,20 +82,38 @@ namespace Calendar.database
                 using (var statement = db.Prepare("SELECT * FROM item where name = ?"))
                 {
                     statement.Bind(1, name);
+                    Debug.WriteLine("before while, name = " + name);
                     while (statement.Step() == SQLiteResult.ROW)
                     {
+                        Debug.WriteLine("while loop...");
                         var temp = ((string)statement[4]).Split('/');
-                        var date1 = new DateTime(int.Parse(temp[2]), int.Parse(temp[0]), int.Parse(temp[1]), int.Parse(temp[3]), int.Parse(temp[4]),0);
-                        var date = new DateTimeOffset(date1);
-                        var titem = new TodoItem((string)statement[2], (string)statement[3], date, (string)statement[5], (string)statement[0], ((Int64)statement[6]) == Int64.Parse("1") ? true : false);
+                        int year = int.Parse(temp[2]);
+                        int month = int.Parse(temp[0]);
+                        int day = int.Parse(temp[1]);
+                        int hour = int.Parse(temp[3]);
+                        int minute = int.Parse(temp[4]);
+                        var date1 = new DateTimeOffset(year, month, day,hour, minute,0,TimeSpan.Zero);
+                        var date = date1;
+                        string tid = (string)statement[0];
+                        string ttitle = (string)statement[2];
+                        string tdes = (string)statement[3];
+                        string timage = (string)statement[5];
+                        Boolean t = ((Int64)statement[6]) == Int64.Parse("1") ? true : false;
+                        Debug.WriteLine("t==" + t);
+                        var  titem = new TodoItem(ttitle, tdes, date, timage, tid, t);
                         view.Add(titem);
+                        // view.Add(null);
+                        Debug.WriteLine("hello");
                     }
+                    Debug.WriteLine("after while..");
                 }
+                
                 return view;
             }
             catch (Exception ex)
             {
                 // TODO: Handle error
+                Debug.WriteLine("in database: view.count" + view.Count);
                 return view;
             }
         }
@@ -107,17 +126,17 @@ namespace Calendar.database
                 using (
                     var sql = db.Prepare("INSERT INTO item (name, id, title, content, date, image, finish) VALUES (?, ?, ?, ?, ?, ?, ?)")){
                     sql.Bind(1, name);//uid
-                    sql.Bind(1, id);
-                    sql.Bind(2, title);
-                    sql.Bind(3, content);
-                    sql.Bind(4, date.Month.ToString() + '/' + date.Day.ToString() + '/' + date.Year.ToString() + '/' + date.Hour.ToString() + '/' + date.Minute.ToString());
-                    sql.Bind(5, imageString);
-                    sql.Bind(6, -1);
+                    sql.Bind(2, id);
+                    sql.Bind(3, title);
+                    sql.Bind(4, content);
+                    sql.Bind(5, date.Month.ToString() + '/' + date.Day.ToString() + '/' + date.Year.ToString() + '/' + date.Hour.ToString() + '/' + date.Minute.ToString());
+                    sql.Bind(6, imageString);
+                    sql.Bind(7, -1);
                     sql.Step();
                 }
-                Background.BackgroundTask.getInstance().AddClock(id, title, content, imageString, date);
+                Background.BackgroundTask.getInstance().AddClock(id, title, content, imageString, date, name);
                 return true;
-            }catch (Exception ex){
+            }catch (Exception){
                 // TODO: Handle error
                 return false;
             }
@@ -138,7 +157,7 @@ namespace Calendar.database
                 Background.BackgroundTask.getInstance().DeleteClock(id);
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // TODO: Handle error
                 return false;
@@ -159,10 +178,12 @@ namespace Calendar.database
                     statement.Bind(5, id);
                     statement.Bind(6, name);
                     statement.Step();
+                    Background.BackgroundTask.getInstance().DeleteClock(id);
+                    Background.BackgroundTask.getInstance().AddClock(id, title, content, imageString, date, name);
                     return true;
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // TODO: Handle error
                 return false;
@@ -181,9 +202,25 @@ namespace Calendar.database
                     statement.Bind(3, name);
                     statement.Step();
                 }
+                if(finish)
+                {
+                    Background.BackgroundTask.getInstance().DeleteClock(id);
+                }
+                else
+                {
+                    var collection = GetAll(name);
+                    foreach (var item in collection)
+                    {
+                        if(item.getId() == id && DateTimeOffset.Now.CompareTo(item.Date) < 0)
+                        {
+                            Background.BackgroundTask.getInstance().AddClock(item.getId(), item.Title, item.Description, item.uriPath, item.Date, name);
+                            break;
+                        }
+                    } 
+                }
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // TODO: Handle error
                 return false;
@@ -213,7 +250,7 @@ namespace Calendar.database
                     msg.Insert(0,"共" + count + "项：\n");
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // TODO: Handle error
                 msg.Append("无");
@@ -221,54 +258,114 @@ namespace Calendar.database
             return msg.ToString();
         }
 
-        public Boolean Register(string name,string pwd,long root)
+        public Boolean Register(string name,string pwd)
         {
             var db = this.conn;
             try
             {
                 using (
-                var sql = db.Prepare("INSERT INTO user (name, pwd,root) VALUES (?, ?, ?)"))
+                var sql = db.Prepare("INSERT INTO user (name, pwd,state) VALUES (?, ?, ?)"))
                 {
                     sql.Bind(1, name);
                     sql.Bind(2, pwd);
-                    sql.Bind(3, root);
+                    sql.Bind(3, 0);
                     sql.Step();
                 }
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // TODO: Handle error
                 return false;
             }
         }
 
-        public UserItem Login(string name)
+        public Boolean Login(String name,String pwd)
         {
+            var db = this.conn;
+            try
+            {
+                using (var statement = db.Prepare("select * from user where name = ? AND pwd = ?"))
+                {
+                    statement.Bind(1, name);
+                    statement.Bind(2, pwd);
+                    if (statement.Step() != SQLiteResult.ROW)
+                    {
+                        return false;
+                    }
+                }
+
+                using (var statement = db.Prepare("UPDATE user SET state = 1 WHERE name = ? AND pwd = ?"))
+                {
+                    statement.Bind(1, name);
+                    statement.Bind(2, pwd);
+                    if (statement.Step() == SQLiteResult.DONE)
+                    {
+                        var collection = GetAll(name);
+                        foreach (var item in collection)
+                        {
+                            if (item.Completed == false && DateTimeOffset.Now.CompareTo(item.Date) < 0)
+                            {
+                                Background.BackgroundTask.getInstance().AddClock(item.getId(), item.Title, item.Description, item.uriPath, item.Date, name);
+                            }
+                        }
+                        Debug.WriteLine("log in correct");
+                        Debug.WriteLine("statement[1]" +name);
+                        return true;
+
+                    }
+                    else
+                    {
+                        Debug.WriteLine("login error");
+                        return false;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // TODO: Handle error
+                return false;
+            }
+        }
+
+        public void Logout()
+        {//update user set root = 1;
             var db = this.conn;
 
             try
             {
-                using (var statement = db.Prepare("SELECT * FROM user WHERE name = ?"))
+                using (var statement = db.Prepare("UPDATE user SET state = 0"))
                 {
-                    statement.Bind(1, name);
-                    if (statement.Step() == SQLiteResult.ROW)
-                    {
-                        return new UserItem((string)statement[0],(string)statement[1],(long)statement[2]);
-                    }
-                    else
-                    {
-                        return null;
-                    }
+                    statement.Step();
                 }
+                Background.BackgroundTask.getInstance().DeleteAllCurrent();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                // TODO: Handle error
-                return null;
+                // TODO: Handle error
             }
         }
 
+        public String getLoged()
+        {
+            var db = this.conn;
+            try
+            {
+                using (var statement = db.Prepare("select name from user where state = 1"))
+                {
+                    if (statement.Step() == SQLiteResult.ROW)
+                    {
+                        return (String)statement[0];
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // TODO: Handle error
+                return (String)null;
+            }
 
+            return (String)null;
+        }
     }
 }
